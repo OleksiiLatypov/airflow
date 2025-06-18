@@ -1,11 +1,11 @@
-# airflow
-test
+# AIRFLOW
 
+### Amazon Books ETL
 
 ### 1. Clone the repository
 ```
 git clone https://github.com/your-username/amazon-books-etl.git
-cd amazon-books-etl
+cd airflow
 ```
 ### 2. Initialize Airflow
 
