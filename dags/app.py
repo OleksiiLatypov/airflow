@@ -18,7 +18,7 @@ headers = {
 base_url = "https://www.amazon.com/s?k=data+engineering+books"
 
 
-def get_amazon_books(pages: int, ti):
+def get_amazon_books(pages: int, ti=None):
     books = []
     unique_books = set()
 
@@ -26,57 +26,63 @@ def get_amazon_books(pages: int, ti):
         url = f'{base_url}&page={page}'
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.content, "html.parser")
-        containers = soup.find_all("div", class_="a-section a-spacing-small puis-padding-left-small puis-padding-right-small")
+        containers = soup.find_all("div",
+                                   class_="a-section a-spacing-small puis-padding-left-small puis-padding-right-small")
 
         for container in containers:
             title_tag = container.find("h2")
             title = title_tag.text.strip() if title_tag else None
 
-            author_tag = container.find("a", class_="a-size-base a-link-normal s-underline-text s-underline-link-text s-link-style")
+            author_tag = container.find("a",
+                                        class_="a-size-base a-link-normal s-underline-text s-underline-link-text s-link-style")
             author = author_tag.text.strip() if author_tag else None
 
+            # Rating
             rating_tag = container.find("span", class_="a-icon-alt")
-            rating = rating_tag.text.strip() if rating_tag else None
+            float_rating = float(rating_tag.text.strip().split()[0]) if rating_tag else None
 
+            # Rating count
             rating_count_tag = container.find("span", class_="a-size-base s-underline-text")
-            rating_count = rating_count_tag.text.strip() if rating_count_tag else None
+            int_rating_count = int(rating_count_tag.text.strip().replace(",", "")) if rating_count_tag else None
 
+            # Price
             price_tag = container.find("span", string=lambda text: text and "$" in text)
-            price = price_tag.text.strip() if price_tag else None
+            float_price = float(price_tag.text.strip().replace("$", "")) if price_tag else None
 
             if title and title not in unique_books:
                 unique_books.add(title)
                 books.append({
                     "title": title,
                     "author": author,
-                    "rating": rating,
-                    "rating_count": rating_count,
-                    "price": price
+                    "rating": float_rating,
+                    "rating_count": int_rating_count,
+                    "price": float_price
                 })
 
     ti.xcom_push(key='book_data', value=books)
 
 
-def insert_data_to_postgres(ti):
+def insert_data_to_postgres(**kwargs):
+    ti = kwargs['ti']
     book_data = ti.xcom_pull(key='book_data', task_ids='get_book_data')
     if not book_data:
         raise ValueError("No book data found")
 
-    hook = PostgresHook(postgres_conn_id='books_connection')
-    conn = hook.get_conn()
+    postgres_hook = PostgresHook(postgres_conn_id='books_connection')
+    conn = postgres_hook.get_conn()
     cursor = conn.cursor()
+    insert_query = """
+                        INSERT INTO book (title, author, rating, rating_count, price)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """
 
     for book in book_data:
-        cursor.execute("""
-            INSERT INTO book (title, author, rating, rating_count, price)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (
+        cursor.execute(insert_query, (
             book['title'], book['author'], book['rating'], book['rating_count'], book['price']
         ))
-
     conn.commit()
-    cursor.close()
     conn.close()
+    cursor.close()
 
 
 default_args = {
